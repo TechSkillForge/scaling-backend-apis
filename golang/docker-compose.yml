@@ -1,0 +1,79 @@
+version: "3"
+
+services:
+  api1: &app
+    build: .
+    container_name: api1
+    environment:
+      HTTP_PORT: 8080
+      DATABASE_URL: postgres://postgres:12345678@postgres:5432/postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - 8080
+    # deploy: # TDB
+    #   resources:
+    #     limits:
+    #       cpus: ""
+    #       memory: ""
+
+  api2:
+    <<: *app
+    container_name: api2
+
+  nginx:
+    image: nginx:latest
+    # volumes: # TBD
+    #   - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api1
+      - api2
+    ports:
+      - "9999:9999"
+    # deploy: # TBD
+    #   resources:
+    #     limits:
+    #       cpus: ""
+    #       memory: ""
+
+  postgres:
+    container_name: postgres
+    image: postgres:16.2-alpine
+    restart: always
+    tty: true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 12345678
+      POSTGRES_DB: postgres
+    # deploy: # TBD
+    #   resources:
+    #     limits:
+    #       cpus: ""
+    #       memory: ""
+
+  locust:
+    build:
+      context: ../stress-test
+      dockerfile: Dockerfile
+    ports:
+      - "8089:8089"
+    volumes:
+      - ../stress-test/locustfile.py:/mnt/locust/locustfile.py
+    command: -f /mnt/locust/locustfile.py --host=http://nginx:9999 --users=500 --spawn-rate=5 --run-time=3m
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: "2G"
+        reservations:
+          cpus: "1"
+          memory: "1G"
